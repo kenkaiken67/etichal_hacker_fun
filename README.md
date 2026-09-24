@@ -24,4 +24,4 @@ Project ini berjalan sepenuhnya di *front-end* (sisi klien), sehingga tidak meme
 
 1. *Clone* repositori ini ke komputer lokal kamu:
    ```bash
-   git clone [https://github.com/USERNAME_KAMU/NAMA_REPOSITORI.git](https://github.com/USERNAME_KAMU/NAMA_REPOSITORI.git)
+  https://kenkaiken67.github.io/etichal_hacker_fun/
