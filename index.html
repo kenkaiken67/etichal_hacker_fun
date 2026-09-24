@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Advanced Terminal | Cyber Security</title>
+    <style>
+        /* =========================================
+           BAGIAN 1: CSS - STYLING & ANIMASI
+           Di sini kita mengatur tampilan agar terlihat
+           seperti monitor jadul (CRT) dan bernuansa gelap.
+           ========================================= */
+        
+        /* Reset margin dasar agar tidak ada ruang putih di pinggir */
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            background-color: #000; /* Latar belakang hitam pekat */
+            color: #0f0; /* Teks hijau neon standar terminal */
+            font-family: 'Courier New', Courier, monospace; /* Font monospaced */
+            height: 100vh;
+            overflow: hidden; /* Mencegah halaman bisa di-scroll secara keseluruhan */
+            position: relative;
+        }
+
+        /* Elemen Canvas untuk Efek Matrix di background */
+        #matrix-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1; /* Posisi di paling belakang */
+            opacity: 0.3; /* Transparansi agar teks terminal tetap terbaca */
+        }
+
+        /* Overlay untuk efek garis pindai (scanline) monitor jadul */
+        .scanlines {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: linear-gradient(to bottom, rgba(255,255,255,0), rgba(255,255,255,0) 50%, rgba(0,0,0,0.2) 50%, rgba(0,0,0,0.2));
+            background-size: 100% 4px;
+            z-index: 2;
+            pointer-events: none; /* Agar tidak mengganggu klik mouse */
+        }
+
+        /* Kontainer utama untuk Terminal */
+        .terminal-container {
+            position: relative;
+            z-index: 3; /* Berada di atas efek canvas dan scanline */
+            width: 90%;
+            max-width: 900px;
+            height: 85vh; /* Mengambil 85% tinggi layar */
+            margin: 40px auto; /* Tengah secara horizontal */
+            background-color: rgba(0, 0, 0, 0.85); /* Hitam agak transparan */
+            border: 2px solid #0f0;
+            border-radius: 5px;
+            box-shadow: 0 0 20px rgba(0, 255, 0, 0.5); /* Efek cahaya (Glow) */
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Area log output terminal */
+        #output-area {
+            flex-grow: 1; /* Mengisi sisa ruang vertikal */
+            overflow-y: auto; /* Memunculkan scrollbar jika konten melebihi tinggi */
+            white-space: pre-wrap; /* Mempertahankan spasi dan baris baru */
+            margin-bottom: 15px;
+            text-shadow: 0 0 5px #0f0; /* Efek teks menyala */
+            line-height: 1.5;
+        }
+
+        /* Kustomisasi scrollbar agar tema tetap hijau */
+        #output-area::-webkit-scrollbar { width: 8px; }
+        #output-area::-webkit-scrollbar-track { background: #000; border-left: 1px solid #0f0; }
+        #output-area::-webkit-scrollbar-thumb { background: #0f0; }
+
+        /* Area input di bagian bawah */
+        .input-line {
+            display: flex;
+            align-items: center;
+            border-top: 1px dashed #0f0;
+            padding-top: 10px;
+        }
+
+        .prompt { margin-right: 10px; font-weight: bold; }
+
+        /* Gaya kotak input (dibuat seolah tidak ada kotaknya) */
+        #command-input {
+            flex-grow: 1;
+            background: transparent;
+            border: none;
+            color: #0f0;
+            font-family: inherit;
+            font-size: 16px;
+            outline: none; /* Menghilangkan garis saat fokus */
+            text-shadow: 0 0 5px #0f0;
+        }
+
+        /* Animasi kedip untuk kursor virtual */
+        .cursor-blink { animation: blink 1s step-end infinite; }
+        @keyframes blink { 50% { opacity: 0; } }
+    </style>
+</head>
+<body>
+
+    <!-- Latar Belakang Interaktif -->
+    <canvas id="matrix-canvas"></canvas>
+    <div class="scanlines"></div>
+
+    <!-- UI Terminal -->
+    <div class="terminal-container">
+        <div id="output-area">
+=== SYSTEM INITIALIZED ===
+OS: Linux/Web-Environment
+Kernel: 5.15.0-virtual
+Mengekstrak modul kriptografi... OK.
+Memuat toolkit keamanan... OK.
+        
+Ketik <span style="color:#fff;">'help'</span> untuk melihat daftar perintah yang tersedia.
+        </div>
+        
+        <div class="input-line">
+            <span class="prompt">root@partner:~#</span>
+            <input type="text" id="command-input" autocomplete="off" autofocus spellcheck="false">
+        </div>
+    </div>
+
+    <script>
+        /* =========================================
+           BAGIAN 2: JAVASCRIPT - EFEK MATRIX
+           Logika untuk membuat hujan huruf berjatuhan.
+           ========================================= */
+        const canvas = document.getElementById('matrix-canvas');
+        const ctx = canvas.getContext('2d');
+
+        // Menyesuaikan ukuran canvas dengan layar penuh
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+
+        // Karakter yang akan jatuh (campuran biner dan huruf)
+        const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789@#$%^&*()';
+        const fontSize = 14;
+        // Menghitung jumlah kolom berdasarkan lebar layar
+        const columns = canvas.width / fontSize; 
+        
+        // Array untuk menyimpan koordinat Y dari setiap kolom
+        const drops = [];
+        for(let i = 0; i < columns; i++) { drops[i] = 1; }
+
+        // Fungsi utama untuk menggambar Matrix
+        function drawMatrix() {
+            // Membuat efek jejak warna hitam transparan
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.05)';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            ctx.fillStyle = '#0F0'; // Warna huruf hijau
+            ctx.font = fontSize + 'px Courier New';
+
+            // Looping untuk setiap kolom
+            for(let i = 0; i < drops.length; i++) {
+                // Memilih karakter acak
+                const text = characters.charAt(Math.floor(Math.random() * characters.length));
+                // Menggambar karakter di canvas
+                ctx.fillText(text, i * fontSize, drops[i] * fontSize);
+
+                // Jika tetesan sudah sampai bawah layar, reset ke atas secara acak
+                if(drops[i] * fontSize > canvas.height && Math.random() > 0.975) {
+                    drops[i] = 0;
+                }
+                drops[i]++; // Menurunkan posisi karakter
+            }
+        }
+        setInterval(drawMatrix, 50); // Jalankan animasi setiap 50 milidetik
+
+        /* =========================================
+           BAGIAN 3: JAVASCRIPT - LOGIKA TERMINAL
+           Otak dari website ini. Memproses perintah, 
+           mengelola riwayat, dan memanipulasi DOM.
+           ========================================= */
+        
+        const inputField = document.getElementById('command-input');
+        const outputLog = document.getElementById('output-area');
+        
+        // Fitur Riwayat Perintah (History)
+        let commandHistory = [];
+        let historyIndex = -1; // -1 berarti belum mencari riwayat
+
+        // Menangani saat tombol ditekan di kotak input
+        inputField.addEventListener('keydown', function(event) {
+            if (event.key === 'Enter') {
+                const commandText = inputField.value;
+                if (commandText.trim() !== '') {
+                    // Simpan ke riwayat
+                    commandHistory.push(commandText);
+                    historyIndex = commandHistory.length; 
+                    
+                    // Cetak perintah yang diketik ke layar
+                    printToScreen(`\nroot@partner:~# ${commandText}`, false);
+                    
+                    // Panggil fungsi untuk memproses logika perintah
+                    executeCommand(commandText);
+                }
+                inputField.value = ''; // Kosongkan input setelah Enter
+                outputLog.scrollTop = outputLog.scrollHeight; // Scroll ke bawah otomatis
+
+            } else if (event.key === 'ArrowUp') {
+                // Jika tombol panah atas ditekan (Mencari riwayat mundur)
+                if (historyIndex > 0) {
+                    historyIndex--;
+                    inputField.value = commandHistory[historyIndex];
+                }
+                event.preventDefault(); // Mencegah kursor lompat ke awal baris
+            } else if (event.key === 'ArrowDown') {
+                // Jika tombol panah bawah ditekan (Mencari riwayat maju)
+                if (historyIndex < commandHistory.length - 1) {
+                    historyIndex++;
+                    inputField.value = commandHistory[historyIndex];
+                } else {
+                    historyIndex = commandHistory.length;
+                    inputField.value = ''; // Kosongkan jika sudah di ujung riwayat
+                }
+            }
+        });
+
+        // Fungsi utilitas untuk mencetak teks ke area output
+        function printToScreen(text, isHTML = false) {
+            if (isHTML) {
+                outputLog.innerHTML += text + "\n";
+            } else {
+                // Menggunakan textContent agar kode HTML (seperti <br>) tidak dieksekusi dari input user
+                const span = document.createElement('span');
+                span.textContent = text;
+                outputLog.appendChild(span);
+                outputLog.appendChild(document.createElement('br'));
+            }
+        }
+
+        // Fungsi inti untuk mengeksekusi perintah
+        function executeCommand(rawCommand) {
+            // Memisahkan perintah utama dengan argumen
+            // Contoh: "echo halo dunia" -> command="echo", args=["halo", "dunia"]
+            const parts = rawCommand.trim().split(' ');
+            const command = parts[0].toLowerCase(); // Kata pertama adalah perintahnya
+            const args = parts.slice(1); // Sisanya adalah argumen
+            
+            let output = ""; // Variabel untuk menyimpan teks balasan
+
+            switch (command) {
+                case 'help':
+                    output = `[ Daftar Perintah Tersedia ]
+- help          : Menampilkan pesan ini
+- clear         : Membersihkan layar terminal
+- about         : Menampilkan profil 
+- date          : Menampilkan waktu sistem saat ini
+- echo [teks]   : Mencetak teks yang kamu ketik
+- dirb [url]    : Simulasi Web Content Scanner
+- jtr [file]    : Simulasi John The Ripper (Password Cracker)
+- encode [teks] : Mengenkripsi teks menjadi Base64 (Fungsi Nyata)
+- decode [teks] : Mendekripsi teks Base64 (Fungsi Nyata)`;
+                    break;
+
+                case 'clear':
+                    outputLog.innerHTML = ""; // Menghapus semua isi di dalam tag outputLog
+                    return; // Menghentikan fungsi agar tidak mencetak baris kosong tambahan
+
+                case 'about':
+                    output = `Nama    : Anonymous
+Status  : Cyber Security Enthusiast & Software Engineer
+Fokus   : Penetration Testing, Python Automation, C++ Logic.
+Quote   : "Amor Fati - Cintai Takdirmu."`;
+                    break;
+
+                case 'date':
+                    output = new Date().toString(); // Mengambil waktu nyata dari komputermu
+                    break;
+
+                case 'echo':
+                    // Menggabungkan kembali argumen dengan spasi
+                    output = args.length > 0 ? args.join(' ') : "";
+                    break;
+
+                case 'encode':
+                    if (args.length === 0) {
+                        output = "Error: Masukkan teks yang ingin di-encode. Contoh: encode rahasia";
+                    } else {
+                        // Menggunakan fungsi bawaan JS (btoa) untuk mengubah string ke Base64
+                        const textToEncode = args.join(' ');
+                        output = `[Base64 Encoded] : ${btoa(textToEncode)}`;
+                    }
+                    break;
+
+                case 'decode':
+                    if (args.length === 0) {
+                        output = "Error: Masukkan teks base64. Contoh: decode cmFoYXNpYQ==";
+                    } else {
+                        try {
+                            // Menggunakan fungsi bawaan JS (atob) untuk mengembalikan Base64
+                            const textToDecode = args.join(' ');
+                            output = `[Base64 Decoded] : ${atob(textToDecode)}`;
+                        } catch (e) {
+                            output = "Error: Teks yang dimasukkan bukan format Base64 yang valid.";
+                        }
+                    }
+                    break;
+
+                case 'dirb':
+                    const targetDirb = args.length > 0 ? args[0] : "http://localhost";
+                    output = `-----------------
+DIRB v2.22    
+-----------------
+START_TIME: ${new Date().toLocaleTimeString()}
+URL_BASE: ${targetDirb}
+WORDLIST_FILES: /usr/share/dirb/wordlists/common.txt
+
+GENERATED WORDS: 4612
+
+---- Scanning URL: ${targetDirb} ----
++ ${targetDirb}/admin (CODE:403|SIZE:274)
++ ${targetDirb}/css (CODE:301|SIZE:312)
++ ${targetDirb}/index.php (CODE:200|SIZE:1042)
++ ${targetDirb}/login.php (CODE:200|SIZE:543)
++ ${targetDirb}/robots.txt (CODE:200|SIZE:124)
+
+-----------------
+END_TIME: ${new Date().toLocaleTimeString()}
+DOWNLOADED: 4612 - FOUND: 5`;
+                    break;
+
+                case 'jtr':
+                    const targetJTR = args.length > 0 ? args[0] : "hash.txt";
+                    output = `Warning: detected hash type "md5crypt", but the string is also recognized as "md5crypt-long"
+Using default input encoding: UTF-8
+Loaded 1 password hash (md5crypt, crypt(3) $1$ [MD5 256/256 AVX2 8x3])
+Will run 4 OpenMP threads
+Proceeding with wordlist:/usr/share/wordlists/rockyou.txt
+...
+...
+[+] CRACKED:
+admin            (? user)
+1 password hash cracked, 0 left`;
+                    break;
+
+                case 'sudo':
+                    output = "Kamu tidak memiliki akses root untuk perintah ini. Aktivitas ini telah dicatat.";
+                    break;
+
+                default:
+                    output = `bash: ${command}: command not found. Ketik 'help' untuk panduan.`;
+            }
+
+            // Mencetak hasil output ke layar terminal
+            printToScreen(output);
+        }
+
+        // Memastikan input selalu fokus jika area layar diklik
+        document.body.addEventListener('click', () => {
+            inputField.focus();
+        });
+    </script>
+</body>
+</html>
