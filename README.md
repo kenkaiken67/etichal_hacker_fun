@@ -23,5 +23,4 @@ Project ini dibangun 100% menggunakan teknologi web murni tanpa *library* ekster
 Project ini berjalan sepenuhnya di *front-end* (sisi klien), sehingga tidak memerlukan instalasi server atau *database*.
 
 1. *Clone* repositori ini ke komputer lokal kamu:
-   ```bash
-  https://kenkaiken67.github.io/etichal_hacker_fun/
+   ```bash https://kenkaiken67.github.io/etichal_hacker_fun/
